@@ -161,3 +161,103 @@ const pad = n => String(n).padStart(2, '0');
 export function todayISO(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+// ---------- Profile ----------
+
+const isSeenItem = it => it.status === 'watched' || it.status === 'completed' || Object.keys(it.seen || {}).length > 0;
+
+export function favoritesOf(items) {
+  return live(items).filter(it => it.favorite).sort((a, b) => (a.favoriteAt || 0) - (b.favoriteAt || 0));
+}
+
+export function memberSince(items) {
+  const times = live(items).map(it => it.addedAt).filter(Boolean);
+  return times.length ? Math.min(...times) : null;
+}
+
+export function decadeCounts(items) {
+  const out = {};
+  for (const it of live(items)) {
+    if (!isSeenItem(it) || !it.year) continue;
+    const d = Math.floor(it.year / 10) * 10;
+    out[d] = (out[d] || 0) + 1;
+  }
+  return out;
+}
+
+const BADGES = [
+  ['first', 'Primera función', 'Registre su primera película.', 1, 'movies'],
+  ['cinefilo', 'Cinéfilo', '50 películas vistas.', 50, 'movies'],
+  ['devorador', 'Devorador de celuloide', '250 películas vistas.', 250, 'movies'],
+  ['leyenda', 'Leyenda de la filmoteca', '1000 películas vistas.', 1000, 'movies'],
+  ['maraton', 'Maratón', '25 temporadas vistas.', 25, 'seasons'],
+  ['showrunner', 'Showrunner', '10 series terminadas.', 10, 'tvCompleted'],
+  ['viajero', 'Viajero en el tiempo', 'Películas de 6 décadas distintas.', 6, 'decades'],
+  ['clasicos', 'Alma clásica', '10 películas anteriores a 1980.', 10, 'classics'],
+  ['critico', 'Crítico', '50 títulos puntuados.', 50, 'rated'],
+  ['corazon', 'Corazón de cine', '10 favoritas elegidas.', 10, 'favorites'],
+  ['milhoras', 'Mil horas de pantalla', '1000 horas entre pelis y series.', 1000, 'hours'],
+];
+
+export function achievements(items) {
+  const s = computeStats(items);
+  const seen = live(items).filter(isSeenItem);
+  const movies = seen.filter(it => it.type === 'movie' && it.status === 'watched');
+  const values = {
+    movies: s.movies, seasons: s.seasons, tvCompleted: s.tvCompleted,
+    decades: new Set(movies.filter(m => m.year).map(m => Math.floor(m.year / 10))).size,
+    classics: movies.filter(m => m.year && m.year < 1980).length,
+    rated: seen.filter(it => it.rating != null).length,
+    favorites: live(items).filter(it => it.favorite).length,
+    hours: Math.floor(s.minutes / 60),
+  };
+  return BADGES.map(([id, title, desc, goal, metric]) => ({ id, title, desc, goal, progress: values[metric], unlocked: values[metric] >= goal }));
+}
+
+// Actors and directors that repeat across the given titles. `credits[key]` = {title, cast, directors}.
+export function topPeople(credits, keys) {
+  const actors = new Map(), directors = new Map();
+  for (const key of keys) {
+    const c = credits[key];
+    if (!c) continue;
+    for (const p of (c.cast || []).slice(0, 8)) {
+      const a = actors.get(p.name) || { name: p.name, photo: null, roles: [], count: 0 };
+      a.photo = a.photo || p.photo || null;
+      a.roles.push({ character: p.character || '', title: c.title, key });
+      a.count++;
+      actors.set(p.name, a);
+    }
+    for (const d of c.directors || []) directors.set(d, (directors.get(d) || 0) + 1);
+  }
+  const byCount = (p, q) => q.count - p.count || p.name.localeCompare(q.name, 'es');
+  return {
+    actors: [...actors.values()].sort(byCount).slice(0, 12),
+    directors: [...directors].map(([name, count]) => ({ name, count })).sort(byCount).slice(0, 8),
+  };
+}
+
+// "Personaje del día": a character (with photo) from the given titles, stable for a given seed.
+export function pickCharacter(credits, keys, seed) {
+  const all = [];
+  for (const key of keys) {
+    const c = credits[key];
+    if (!c) continue;
+    for (const p of (c.cast || []).slice(0, 6)) all.push({ key, title: c.title, year: c.year || null, name: p.name, character: p.character || '', photo: p.photo || null });
+  }
+  const pool = [all.filter(p => p.photo && p.character), all.filter(p => p.photo), all].find(list => list.length);
+  if (!pool) return null;
+  return pool[((seed % pool.length) + pool.length) % pool.length];
+}
+
+// ---------- Status line ----------
+
+export function telemetryText({ count, online, state, lastSync }) {
+  const parts = [`${count} REGISTROS`];
+  if (!online) return { status: 'SIN CONEXIÓN', warn: true, parts };
+  let warn = false;
+  if (state === 'syncing') parts.push('SINCRONIZANDO…');
+  else if (state === 'unauthorized') { parts.push('REVISAR SINCRONIZACIÓN'); warn = true; }
+  else if (state === 'error') { parts.push('SINC. PENDIENTE'); warn = true; }
+  else if (lastSync) { const d = new Date(lastSync); parts.push(`SINC. ${pad(d.getHours())}:${pad(d.getMinutes())}`); }
+  return { status: 'EN LÍNEA', warn, parts };
+}

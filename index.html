@@ -16,15 +16,16 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://image.tmdb.org">
+  <link rel="preconnect" href="https://image.tmdb.org" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=Saira:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="field" aria-hidden="true"></div>
+  <canvas id="dust" class="dust" aria-hidden="true"></canvas>
 
   <div id="boot" class="boot" aria-hidden="true">
-    <div class="boot-core"><span></span><span></span><span></span></div>
+    <div class="boot-core"><span></span><span></span><span></span><div class="boot-count"><i>3</i><i>2</i><i>1</i></div></div>
     <p class="boot-text">INICIALIZANDO VISOR</p>
   </div>
 
@@ -41,6 +42,7 @@
     <a href="#inicio" data-route="inicio" data-icon="home"><span>Inicio</span></a>
     <a href="#catalogo" data-route="catalogo" data-icon="grid"><span>Catálogo</span></a>
     <a href="#archivo" data-route="archivo" data-icon="archive"><span>Archivo</span></a>
+    <a href="#perfil" data-route="perfil" data-icon="profile"><span>Perfil</span></a>
     <a href="#informe" data-route="informe" data-icon="chart"><span>Informe</span></a>
     <a href="#ajustes" data-route="ajustes" data-icon="settings" class="dock-settings"><span>Ajustes</span></a>
   </nav>

@@ -95,8 +95,13 @@ export function createSync({ store, fetch, now = Date.now, setTimer = (fn, ms) =
     async connect(rawToken) {
       const tok = String(rawToken || '').trim();
       const user = await api('GET', '/user', null, tok);
-      const gists = await api('GET', '/gists?per_page=100', null, tok);
-      let gist = (gists || []).find(g => g.files && g.files[FILE]);
+      // Look through every page of the user's gists (100 per page) before creating a new one.
+      let gist = null;
+      for (let page = 1; page <= 20 && !gist; page++) {
+        const list = (await api('GET', `/gists?per_page=100&page=${page}`, null, tok)) || [];
+        gist = list.find(g => g.files && g.files[FILE]) || null;
+        if (list.length < 100) break;
+      }
       if (!gist) {
         gist = await api('POST', '/gists', { description: DESCRIPTION, public: false, files: { [FILE]: { content: JSON.stringify(payload()) } } }, tok);
       }

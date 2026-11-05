@@ -96,7 +96,7 @@ export function render(root, ctx) {
     if (!list.length) { out.push(emptyState('Nada pendiente', 'Añada pelis o series a pendientes desde su ficha.', cta)); return out; }
     out.push(h('div', { class: 'grid' }, list.map(it =>
       h('button', { class: 'card', type: 'button', onClick: () => ctx.openDetail(it.type, it.id), 'aria-label': `Ficha de ${it.title}` },
-        h('div', { class: 'poster' }, posterImg(it, 'w342')),
+        h('div', { class: 'poster tilt' }, posterImg(it, 'w342')),
         h('div', { class: 'title' }, it.title),
         h('div', { class: 'sub' }, `${it.year || '—'} · ${it.type === 'tv' ? 'SERIE' : 'PELI'}`)))));
     return out;

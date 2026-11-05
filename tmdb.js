@@ -68,7 +68,7 @@ export function createTmdb({ getKey, fetch }) {
       people: type === 'movie'
         ? ((d.credits || {}).crew || []).filter(c => c.job === 'Director').map(c => c.name)
         : (d.created_by || []).map(c => c.name),
-      cast: ((d.credits || {}).cast || []).slice(0, 10).map(c => ({ name: c.name, character: c.character || '' })),
+      cast: ((d.credits || {}).cast || []).slice(0, 12).map(c => ({ name: c.name, character: c.character || '', photo: c.profile_path || null })),
       providers: { link: es.link || null, flatrate: prov(es.flatrate), rent: prov(es.rent), buy: prov(es.buy) },
       seasons: type === 'tv' ? (d.seasons || []).map(s => ({
         n: s.season_number, eps: s.episode_count || 0, runtime, name: s.name || `Temporada ${s.season_number}`, air: s.air_date || null,

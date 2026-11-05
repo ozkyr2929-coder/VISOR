@@ -41,9 +41,9 @@ export function createStore(storage, now = Date.now) {
     if (meta.type === 'tv' && meta.seasons && meta.seasons.length) it.seasons = meta.seasons;
     return it;
   }
-  const isEmpty = it => it.type === 'movie'
+  const isEmpty = it => !it.favorite && (it.type === 'movie'
     ? !it.watches.length && it.status !== 'watchlist' && it.rating == null && !it.note
-    : !Object.keys(it.seen).length && !it.status && it.rating == null && !it.note;
+    : !Object.keys(it.seen).length && !it.status && it.rating == null && !it.note);
   function commit(it) {
     it.updatedAt = now();
     state.items[it.key] = isEmpty(it) ? { key: it.key, deleted: true, updatedAt: it.updatedAt } : it;
@@ -108,6 +108,13 @@ export function createStore(storage, now = Date.now) {
       const it = draft(meta);
       if (on) { if (it.status !== 'watched' && it.status !== 'completed') it.status = 'watchlist'; }
       else if (it.status === 'watchlist') it.status = null;
+      return commit(it);
+    },
+
+    setFavorite(meta, on) {
+      const it = draft(meta);
+      it.favorite = Boolean(on);
+      it.favoriteAt = on ? now() : null;
       return commit(it);
     },
 

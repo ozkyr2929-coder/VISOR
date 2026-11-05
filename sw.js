@@ -1,8 +1,8 @@
 // VISOR service worker: opens offline, keeps the app fresh, caches posters and fonts.
-const VERSION = 'visor-1.0.0';
+const VERSION = 'visor-1.1.0';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'model.js', 'store.js', 'tmdb.js', 'sync.js', 'ui.js', 'voice.js', 'genres.js',
-  'view-home.js', 'view-catalog.js', 'view-quicklist.js', 'view-detail.js', 'view-archive.js', 'view-report.js', 'view-settings.js',
+  'credits.js', 'fx.js', 'view-profile.js', 'view-home.js', 'view-catalog.js', 'view-quicklist.js', 'view-detail.js', 'view-archive.js', 'view-report.js', 'view-settings.js',
   'manifest.webmanifest', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
 ];
 const IMAGES = 'visor-images';

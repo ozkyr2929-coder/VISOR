@@ -3,6 +3,9 @@ import { createStore } from './store.js';
 import { createTmdb } from './tmdb.js';
 import { createSync } from './sync.js';
 import { icon, toast, h } from './ui.js';
+import { telemetryText } from './model.js';
+import { createCredits } from './credits.js';
+import { startDust, initTilt } from './fx.js';
 
 const params = new URLSearchParams(location.search);
 if (params.has('mock')) {
@@ -18,11 +21,13 @@ const store = createStore(safeStorage);
 const netFetch = (...a) => window.fetch(...a);
 const tmdb = createTmdb({ getKey: () => store.getState().settings.tmdbKey, fetch: netFetch });
 const sync = createSync({ store, fetch: netFetch });
+const credits = createCredits({ tmdb, storage: safeStorage });
 
 const VIEWS = {
   inicio: () => import('./view-home.js'),
   catalogo: () => import('./view-catalog.js'),
   archivo: () => import('./view-archive.js'),
+  perfil: () => import('./view-profile.js'),
   informe: () => import('./view-report.js'),
   ajustes: () => import('./view-settings.js'),
 };
@@ -54,7 +59,7 @@ function retryPendingSeasons() {
 }
 
 const ctx = {
-  store, tmdb, sync, toast,
+  store, tmdb, sync, credits, toast,
   name: () => store.getState().settings.name || 'señor',
   go: route => { location.hash = `#${route}`; },
   openDetail: (type, id) => { location.hash = `#ficha/${type}/${id}`; },
@@ -136,18 +141,20 @@ const telemetry = document.getElementById('telemetry');
 function updateTelemetry() {
   const count = Object.values(store.getState().items).filter(i => !i.deleted).length;
   const st = sync.status();
-  let syncText = '';
-  if (!navigator.onLine) syncText = '<span class="warn">SIN CONEXIÓN</span>';
-  else if (st.state === 'syncing') syncText = 'SINCRONIZANDO…';
-  else if (st.state === 'unauthorized') syncText = '<span class="warn">REVISAR SINCRONIZACIÓN</span>';
-  else if (st.state === 'error') syncText = '<span class="warn">SINC. PENDIENTE</span>';
-  else if (st.lastSync) syncText = `SINC. ${new Date(st.lastSync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
-  telemetry.innerHTML = `<b>●</b> EN LÍNEA · ${count} REGISTROS${syncText ? ` · ${syncText}` : ''}`;
+  const t = telemetryText({ count, online: navigator.onLine, state: st.state, lastSync: st.lastSync });
+  telemetry.replaceChildren(
+    h('b', { class: t.status === 'EN LÍNEA' ? '' : 'warn' }, '● '),
+    h('span', { class: t.status === 'EN LÍNEA' ? '' : 'warn' }, t.status),
+    ...t.parts.map((p, i) => h('span', { class: t.warn && i > 0 ? 'warn' : '' }, ` · ${p}`)));
 }
 sync.onStatus(updateTelemetry);
 window.addEventListener('online', () => { updateTelemetry(); sync.syncNow(); });
 window.addEventListener('offline', updateTelemetry);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync.syncNow(); });
+
+// ---------- Cinema layer ----------
+startDust(document.getElementById('dust'));
+initTilt();
 
 // ---------- Icons in static markup ----------
 document.querySelectorAll('[data-icon]').forEach(el => el.prepend(icon(el.dataset.icon)));

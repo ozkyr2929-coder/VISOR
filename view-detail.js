@@ -1,5 +1,5 @@
 // Ficha: everything about one title, plus the user's own log for it.
-import { h, icon, openSheet, posterImg, starsInput, formatDate, loading, errorText, STATUS_LABEL } from './ui.js';
+import { h, icon, openSheet, posterImg, personImg, starsInput, formatDate, loading, errorText, STATUS_LABEL } from './ui.js';
 import { img } from './tmdb.js';
 import { formatMinutes, todayISO } from './model.js';
 import { genreName } from './genres.js';
@@ -68,7 +68,13 @@ export function openDetail(ctx, type, id, onUserClose) {
       info.overview ? h('p', { class: 'lead', style: { color: 'var(--ink)' } }, info.overview) : null,
       h('dl', { class: 'kv' },
         info.people.length ? [h('dt', {}, type === 'tv' ? 'Creación' : 'Dirección'), h('dd', {}, info.people.join(', '))] : null,
-        info.cast.length ? [h('dt', {}, 'Reparto'), h('dd', {}, info.cast.slice(0, 8).map(c => c.name).join(', '))] : null),
+        null),
+      info.cast.length ? h('div', { style: { display: 'grid', gap: '10px' } },
+        h('p', { class: 'eyebrow' }, 'Reparto'),
+        h('div', { class: 'cast-row' }, info.cast.slice(0, 12).map(c => h('div', { class: 'cast-card' },
+          h('div', { class: 'ph tilt' }, personImg(c, 'w185')),
+          h('b', {}, c.name),
+          c.character ? h('span', {}, c.character) : null)))) : null,
       h('div', { style: { display: 'grid', gap: '10px' } },
         h('p', { class: 'eyebrow' }, 'Dónde verla en España'),
         p.flatrate && p.flatrate.length ? providerRow(p.flatrate) : h('p', { class: 'muted' }, 'No está incluida en ninguna suscripción ahora mismo.'),
@@ -81,7 +87,12 @@ export function openDetail(ctx, type, id, onUserClose) {
   // ---------- The user's log ----------
   function drawLog() {
     const it = store.getItem(key);
-    const parts = [h('p', { class: 'eyebrow' }, 'Su registro')];
+    const fav = Boolean(it && it.favorite);
+    const favBtn = h('button', { class: 'fav', type: 'button', 'aria-pressed': String(fav), onClick: () => {
+      store.setFavorite(meta(), !fav);
+      ctx.toast(fav ? 'Quitada de favoritas.' : `${meta().title} entra en sus favoritas.`);
+    } }, icon('heart'), fav ? 'Favorita' : 'Añadir a favoritas');
+    const parts = [h('div', { class: 'log-head' }, h('p', { class: 'eyebrow' }, 'Su registro'), favBtn)];
     if (type === 'movie') parts.push(...movieLog(it)); else parts.push(...tvLog(it));
     if (it) {
       parts.push(confirmRemove

@@ -4,7 +4,7 @@ import { mergeStates, todayISO } from './model.js';
 
 const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=VISOR';
 const TMDB_API_URL = 'https://www.themoviedb.org/settings/api';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 export function render(root, ctx) {
   const { store, tmdb, sync } = ctx;

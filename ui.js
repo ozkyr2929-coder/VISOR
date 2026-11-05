@@ -44,6 +44,10 @@ const ICONS = {
   external: '<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M4 20h16"/>',
   upload: '<path d="M12 20V9M7 14l5-5 5 5M4 4h16"/>',
+  profile: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/><path d="M2.5 6V3.5h2.5M21.5 6V3.5H19M2.5 18v2.5h2.5M21.5 18v2.5H19"/>',
+  heart: '<path d="M12 20.5s-7.5-4.6-9.2-9.4C1.6 7.6 3.8 4.5 7 4.5c2 0 3.6 1.1 5 3 1.4-1.9 3-3 5-3 3.2 0 5.4 3.1 4.2 6.6-1.7 4.8-9.2 9.4-9.2 9.4z"/>',
+  scan: '<path d="M3 8V4h4M21 8V4h-4M3 16v4h4M21 16v4h-4"/><path d="M3 12h18"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4"/>',
 };
 const STAR = '<path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4L2.8 9.5l6.4-.8z"/>';
 
@@ -89,6 +93,21 @@ export function posterPlaceholder(title = '') {
   return url;
 }
 
+// Actor photo, or a HUD silhouette with initials when TMDB has none.
+export function personImg(person, size = 'w185') {
+  const src = img(person.photo, size);
+  if (src) {
+    const el = h('img', { src, alt: '', loading: 'lazy', decoding: 'async', crossorigin: 'anonymous' });
+    el.addEventListener('error', () => el.replaceWith(silhouette(person.name)), { once: true });
+    return el;
+  }
+  return silhouette(person.name);
+}
+function silhouette(name = '') {
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  return h('div', { class: 'silhouette', 'aria-hidden': 'true' }, icon('profile', { width: '1.2' }), h('span', {}, initials));
+}
+
 export function posterImg(meta, size = 'w342', alt = '') {
   const src = img(meta.poster, size) || posterPlaceholder(meta.title);
   const el = h('img', { src, alt, loading: 'lazy', decoding: 'async', crossorigin: 'anonymous' });
@@ -102,7 +121,7 @@ export const STATUS_LABEL = { watchlist: 'Pendiente', watching: 'Viendo', comple
 // Catalog card: tapping the poster runs onTap (bulk toggle), the "i" button runs onInfo.
 export function posterCard(meta, { watched = false, badge = null, onTap, onInfo, showType = false, tapLabel } = {}) {
   const card = h('div', { class: `card${watched ? ' is-watched' : ''}`, dataset: { key: `${meta.type}:${meta.id}` } },
-    h('div', { class: 'poster' },
+    h('div', { class: 'poster tilt' },
       posterImg(meta, 'w342'),
       h('div', { class: 'stamp', 'aria-hidden': 'true' }, icon('hexcheck', { width: '1.4' }), 'VISTA'),
       badge ? h('span', { class: 'badge' }, badge) : null,
@@ -190,7 +209,18 @@ export function openSheet(content, { onClose, label = 'Detalle' } = {}) {
     if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
     onClose && onClose();
   };
-  const onKey = e => { if (e.key === 'Escape') close(); };
+  // Keep keyboard focus inside the sheet while it is open.
+  const onKey = e => {
+    if (e.key === 'Escape') { close(); return; }
+    if (e.key !== 'Tab') return;
+    const focusable = [...sheet.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.offsetParent !== null || el === document.activeElement);
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (!sheet.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   document.addEventListener('keydown', onKey);
   backdrop.addEventListener('click', close);
   closeBtn.addEventListener('click', close);

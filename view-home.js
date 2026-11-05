@@ -1,6 +1,7 @@
 // Inicio: greeting, this year's count, series in progress, watchlist and latest entries.
-import { h, icon, posterImg, starsLabel, MONTHS_SHORT } from './ui.js';
-import { computeStats, diaryEntries, greeting, nextSeason, todayISO } from './model.js';
+import { h, icon, posterImg, personImg, starsLabel, MONTHS_SHORT } from './ui.js';
+import { computeStats, diaryEntries, greeting, nextSeason, todayISO, favoritesOf, pickCharacter } from './model.js';
+import { projector, shuffle } from './fx.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 function reactor() {
@@ -21,6 +22,50 @@ function reactor() {
   return svg;
 }
 
+const isSeen = it => it.status === 'watched' || it.status === 'completed' || Object.keys(it.seen || {}).length > 0;
+
+// "Personaje del día": a character from the user's favourites (or what they watched), identified HUD-style.
+function characterCard(ctx) {
+  const box = h('section', { class: 'ident frame', hidden: true, 'aria-live': 'polite' });
+  let seed = Math.floor(Date.now() / 86400000);
+  let tries = 0;
+  const pool = () => {
+    const items = ctx.store.getState().items;
+    const favs = favoritesOf(items);
+    if (favs.length) return favs;
+    return Object.values(items).filter(it => !it.deleted && isSeen(it)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 40);
+  };
+  async function scan() {
+    const list = pool();
+    if (!list.length) { box.hidden = true; return; }
+    box.classList.add('scanning');
+    const it = list[((seed % list.length) + list.length) % list.length];
+    try {
+      const c = await ctx.credits.get(it.type, it.id);
+      const pick = pickCharacter({ [it.key]: c }, [it.key], seed);
+      if (!pick) { if (++tries < 4) { seed++; return scan(); } box.hidden = true; return; }
+      tries = 0;
+      paint(pick, it);
+    } catch { box.hidden = true; }
+  }
+  function paint(p, it) {
+    box.hidden = false;
+    box.classList.remove('scanning');
+    box.replaceChildren(
+      h('div', { class: 'ident-photo' }, personImg(p, 'w185'), h('span', { class: 'reticle' }), h('span', { class: 'ident-scanline' })),
+      h('div', { class: 'ident-body' },
+        h('p', { class: 'eyebrow' }, 'Personaje del día · identificado'),
+        h('p', { class: 'ident-name' }, p.character || p.name),
+        h('p', { class: 'muted' }, p.character ? `Interpretado por ${p.name}` : 'En el reparto'),
+        h('p', { class: 'mono faint' }, `${p.title.toUpperCase()}${p.year ? ` · ${p.year}` : ''}`),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn small', type: 'button', onClick: () => ctx.openDetail(it.type, it.id) }, 'Ver ficha'),
+          h('button', { class: 'btn ghost small', type: 'button', onClick: () => { seed++; scan(); } }, icon('scan'), 'Escanear otro'))));
+  }
+  scan();
+  return box;
+}
+
 function row(ctx, it, { right, meta }) {
   return h('div', { class: 'row' },
     h('div', { class: 'thumb' }, posterImg(it, 'w92')),
@@ -33,6 +78,12 @@ function row(ctx, it, { right, meta }) {
 export function render(root, ctx) {
   const page = h('div', { class: 'page' });
   root.append(page);
+  // Built once so the slideshow and the character survive redraws.
+  const startItems = ctx.store.getState().items;
+  const favs = favoritesOf(startItems);
+  const scenes = (favs.length ? favs : Object.values(startItems).filter(it => !it.deleted && isSeen(it)).slice(-30)).map(it => it.backdrop).filter(Boolean);
+  const stage = projector(shuffle(scenes).slice(0, 12));
+  const character = characterCard(ctx);
 
   function draw() {
     const { store } = ctx;
@@ -52,7 +103,7 @@ export function render(root, ctx) {
       : 'Su registro está vacío. Empecemos por lo que ya ha visto.';
 
     page.replaceChildren(...[
-      h('section', { class: 'home-hero' },
+      h('section', { class: `home-hero${scenes.length ? ' screen' : ''}` }, stage.node,
         h('div', { class: 'reactor' }, reactor(),
           h('div', { class: 'reactor-core' }, h('b', {}, String(thisYear)), h('span', {}, `Vistas ${year}`))),
         h('div', { style: { display: 'grid', gap: '18px' } },
@@ -77,6 +128,8 @@ export function render(root, ctx) {
         h('p', { class: 'muted' }, 'Recorra las imprescindibles, las décadas o las sagas y toque cada carátula que haya visto. También puede escribir o dictar una lista de títulos.'),
         h('div', { class: 'btn-row' }, h('a', { class: 'btn solid', href: '#catalogo' }, icon('grid'), 'Ponerme al día'))) : null,
 
+      character,
+
       watching.length ? h('section', {},
         h('div', { class: 'section-head' }, h('h2', { class: 'h2' }, 'Series en curso')),
         h('div', { class: 'rows' }, watching.map(it => {
@@ -94,7 +147,7 @@ export function render(root, ctx) {
         h('div', { class: 'section-head' }, h('h2', { class: 'h2' }, 'Pendientes'), h('a', { class: 'link', href: '#archivo' }, 'Ver todo')),
         h('div', { class: 'shelf' }, watchlist.slice(0, 20).map(it =>
           h('button', { class: 'card', type: 'button', onClick: () => ctx.openDetail(it.type, it.id), 'aria-label': `Ficha de ${it.title}` },
-            h('div', { class: 'poster' }, posterImg(it, 'w342')),
+            h('div', { class: 'poster tilt' }, posterImg(it, 'w342')),
             h('div', { class: 'title' }, it.title),
             h('div', { class: 'sub' }, `${it.year || '—'} · ${it.type === 'tv' ? 'SERIE' : 'PELI'}`))))) : null,
 
@@ -115,5 +168,5 @@ export function render(root, ctx) {
   }
 
   draw();
-  return { update: draw };
+  return { update: draw, destroy: stage.stop };
 }
