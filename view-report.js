@@ -1,5 +1,5 @@
 // Informe: totals, month (or year) chart, rating spread and favourite genres.
-import { h, emptyState, MONTHS_SHORT } from './ui.js';
+import { h, emptyState, MONTHS_SHORT, fill } from './ui.js';
 import { computeStats, diaryEntries, formatMinutes } from './model.js';
 import { genreName } from './genres.js';
 
@@ -66,7 +66,7 @@ export function render(root, ctx) {
     const steps = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
     const rated = steps.reduce((n, r) => n + (s.ratingDist[String(r)] || 0), 0);
 
-    page.replaceChildren(
+    fill(page, 
       h('header', { style: { display: 'grid', gap: '10px' } },
         h('p', { class: 'eyebrow' }, 'Informe'),
         h('h1', { class: 'h1' }, selected === 'all' ? 'Todo su historial' : `Informe de ${selected}`),

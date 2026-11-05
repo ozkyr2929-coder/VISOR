@@ -5,6 +5,8 @@ const MAX_PAGES = 500; // TMDB never serves pages beyond 500
 
 export const img = (path, size = 'w342') => (path ? `${IMG}${size}${path}` : null);
 
+const pad2 = n => String(n).padStart(2, '0');
+const isoToday = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const yearFrom = d => (d && /^\d{4}/.test(d) ? Number(d.slice(0, 4)) : null);
 
 export function normalize(raw, type) {
@@ -53,9 +55,12 @@ export function createTmdb({ getKey, fetch }) {
     totalPages: Math.min(data.total_pages || 1, MAX_PAGES),
   });
 
-  async function details(type, id) {
-    const d = await request(`/${type}/${id}`, { append_to_response: 'credits,watch/providers' });
+  // Full sheet (with where to watch it) or a brief one (credits only) for the background library.
+  async function details(type, id, { providers = true } = {}) {
+    const d = await request(`/${type}/${id}`, { append_to_response: providers ? 'credits,watch/providers' : 'credits' });
     const meta = normalize(d, type);
+    const directors = (type === 'movie' ? ((d.credits || {}).crew || []).filter(c => c.job === 'Director') : d.created_by || [])
+      .map(c => ({ id: c.id, name: c.name }));
     const runtime = type === 'movie' ? d.runtime || null
       : (d.episode_run_time && d.episode_run_time[0]) || (d.last_episode_to_air && d.last_episode_to_air.runtime) || null;
     const es = ((d['watch/providers'] || {}).results || {}).ES || {};
@@ -65,10 +70,10 @@ export function createTmdb({ getKey, fetch }) {
       runtime,
       tagline: d.tagline || '',
       genreNames: (d.genres || []).map(g => g.name),
-      people: type === 'movie'
-        ? ((d.credits || {}).crew || []).filter(c => c.job === 'Director').map(c => c.name)
-        : (d.created_by || []).map(c => c.name),
-      cast: ((d.credits || {}).cast || []).slice(0, 12).map(c => ({ name: c.name, character: c.character || '', photo: c.profile_path || null })),
+      people: directors.map(c => c.name),
+      directors,
+      collection: (d.belongs_to_collection && d.belongs_to_collection.id) || null,
+      cast: ((d.credits || {}).cast || []).slice(0, 12).map(c => ({ id: c.id, name: c.name, character: c.character || '', photo: c.profile_path || null })),
       providers: { link: es.link || null, flatrate: prov(es.flatrate), rent: prov(es.rent), buy: prov(es.buy) },
       seasons: type === 'tv' ? (d.seasons || []).map(s => ({
         n: s.season_number, eps: s.episode_count || 0, runtime, name: s.name || `Temporada ${s.season_number}`, air: s.air_date || null,
@@ -85,7 +90,9 @@ export function createTmdb({ getKey, fetch }) {
     },
     async search(query, page = 1) {
       const d = await request('/search/multi', { query, page, include_adult: false });
-      return list(d, undefined, r => r.media_type === 'movie' || r.media_type === 'tv');
+      const people = (d.results || []).filter(r => r.media_type === 'person')
+        .map(r => ({ id: r.id, name: r.name, photo: r.profile_path || null, dept: r.known_for_department || '' }));
+      return { ...list(d, undefined, r => r.media_type === 'movie' || r.media_type === 'tv'), people };
     },
     async trending(type, page = 1) { return list(await request(`/trending/${type}/week`, { page }), type); },
     async top(type, page = 1) { return list(await request(`/${type}/top_rated`, { page, region: 'ES' }), type); },
@@ -100,25 +107,42 @@ export function createTmdb({ getKey, fetch }) {
       return list(await request(`/discover/${type}`, params), type);
     },
     details,
-    async collectionByName(name) {
-      const s = await request('/search/collection', { query: name });
-      const rs = s.results || [];
-      // "Alien - Colección" must beat "Alien vs. Predator - Colección" for the query "Alien".
-      const norm = v => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/\b(collection|coleccion|saga)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/^(the|el|la|los|las) /, '');
-      const q = norm(name);
-      const hit = rs.find(r => norm(r.name) === q) || rs.find(r => norm(r.name).startsWith(q)) || rs[0];
-      if (!hit) return null;
-      const c = await request(`/collection/${hit.id}`);
-      const parts = (c.parts || []).map(p => normalize(p, 'movie'))
-        .filter(p => p.year).sort((a, b) => a.year - b.year);
-      return { id: c.id, name: c.name, poster: c.poster_path || null, backdrop: c.backdrop_path || null, parts };
+    brief: (type, id) => details(type, id, { providers: false }),
+    // A saga by its fixed TMDB id. Films without a date or not released yet are left out.
+    async collection(id, today = isoToday()) {
+      const c = await request(`/collection/${id}`);
+      const dated = (c.parts || []).filter(p => p.release_date);
+      const parts = dated.filter(p => p.release_date <= today).map(p => normalize(p, 'movie')).sort((a, b) => a.year - b.year);
+      return { id: c.id, name: c.name, poster: c.poster_path || null, backdrop: c.backdrop_path || null, parts, upcoming: dated.length - parts.length };
     },
-    async companyByName(name) {
-      const s = await request('/search/company', { query: name });
-      const rs = s.results || [];
-      const hit = rs.find(r => r.name.toLowerCase() === name.toLowerCase()) || rs[0];
-      return hit ? { id: hit.id, name: hit.name } : null;
+    // Filmography: what the person acted in and what they directed (or created, for series).
+    async person(id) {
+      const d = await request(`/person/${id}`, { append_to_response: 'combined_credits' });
+      const cc = d.combined_credits || {};
+      const self = /^(self|himself|herself|themselves|él mismo|ella misma|sí mismo|host|presenter|narrator)\b/i;
+      const pick = (list, keep, extra) => {
+        const seen = new Set(), out = [];
+        for (const r of list || []) {
+          if ((r.media_type !== 'movie' && r.media_type !== 'tv') || !keep(r)) continue;
+          const k = `${r.media_type}:${r.id}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push({ ...normalize(r, r.media_type), votes: r.vote_count || 0, ...extra(r) });
+        }
+        return out.sort((a, b) => b.votes - a.votes);
+      };
+      const talk = r => (r.genre_ids || []).some(g => g === 10767 || g === 10763);
+      return {
+        id: d.id, name: d.name, photo: d.profile_path || null, dept: d.known_for_department || '',
+        birthday: d.birthday || null, deathday: d.deathday || null, place: d.place_of_birth || '', bio: d.biography || '',
+        acted: pick(cc.cast, r => !(r.media_type === 'tv' && (self.test(r.character || '') || talk(r))), r => ({ character: r.character || '' })),
+        directed: pick(cc.crew, r => (r.media_type === 'movie' && r.job === 'Director') || (r.media_type === 'tv' && r.job === 'Creator'), r => ({ job: r.job })),
+      };
+    },
+    async findPerson(name) {
+      const s = await request('/search/person', { query: name });
+      const r = (s.results || [])[0];
+      return r ? { id: r.id, name: r.name, photo: r.profile_path || null } : null;
     },
     async genres(type) { return ((await request(`/genre/${type}/list`)).genres || []).map(g => ({ id: g.id, name: g.name })); },
     async providers(type) {

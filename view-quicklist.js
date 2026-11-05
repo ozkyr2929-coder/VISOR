@@ -1,5 +1,5 @@
 // Lista rápida: type or dictate many titles, review the best matches, confirm them all at once.
-import { h, icon, openSheet, posterImg, loading, errorText } from './ui.js';
+import { h, icon, openSheet, posterImg, loading, errorText, fill } from './ui.js';
 import { parseQuickList, pickBestMatch } from './model.js';
 import { attachMic } from './voice.js';
 
@@ -34,7 +34,7 @@ export function openQuickList(ctx) {
       if (!queries.length) { ta.focus(); return; }
       stepReview(queries, ta.value);
     } }, icon('search'), 'Buscar coincidencias');
-    inner.replaceChildren(
+    fill(inner, 
       h('div', { style: { display: 'grid', gap: '8px', paddingRight: '44px' } },
         h('p', { class: 'eyebrow' }, 'Lista rápida'),
         h('h2', { class: 'h1' }, 'Dígame qué ha visto'),
@@ -45,19 +45,22 @@ export function openQuickList(ctx) {
   }
 
   async function stepReview(queries, original) {
-    inner.replaceChildren(
+    fill(inner, 
       h('div', { style: { display: 'grid', gap: '8px', paddingRight: '44px' } },
         h('p', { class: 'eyebrow' }, 'Lista rápida'), h('h2', { class: 'h1' }, 'Revisando coincidencias')),
       loading(`Buscando ${queries.length} títulos`));
     let rows;
     try {
+      // One title failing (a network blip) leaves that row empty instead of losing the whole list.
       rows = await mapLimit(queries, 4, async q => {
-        const r = await tmdb.search(q.query, 1);
+        let r;
+        try { r = await tmdb.search(q.query, 1); }
+        catch (e) { if (e.code === 'nokey' || e.code === 'unauthorized') throw e; return { q, results: [], pick: null, on: false, failed: true }; }
         const results = r.results.filter(x => filter === 'all' || x.type === filter);
         return { q, results: results.slice(0, 6), pick: pickBestMatch(results, q), on: true };
       });
     } catch (e) {
-      inner.replaceChildren(h('p', { class: 'status-line err' }, errorText(e)),
+      fill(inner, h('p', { class: 'status-line err' }, errorText(e)),
         h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', onClick: () => stepWrite(original) }, 'Volver')));
       return;
     }
@@ -66,10 +69,10 @@ export function openQuickList(ctx) {
     const confirmLater = h('button', { class: 'btn amber', type: 'button' });
 
     const paint = () => {
-      list.replaceChildren(...rows.map((r, i) => {
+      fill(list, ...rows.map((r, i) => {
         if (!r.pick) {
           return h('div', { class: 'ql-row miss' },
-            h('div', { class: 'body' }, h('div', { class: 'q' }, `«${r.q.query}»`), h('div', { class: 't' }, 'Sin resultados')),
+            h('div', { class: 'body' }, h('div', { class: 'q' }, `«${r.q.query}»`), h('div', { class: 't' }, r.failed ? 'No se pudo buscar (sin conexión)' : 'Sin resultados')),
             h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Quitar', onClick: () => { rows.splice(i, 1); paint(); } }, icon('close')));
         }
         const p = r.pick;
@@ -90,8 +93,8 @@ export function openQuickList(ctx) {
             onClick: () => { r.on = !r.on; paint(); } }, icon('check')));
       }));
       const n = rows.filter(r => r.on && r.pick).length;
-      confirmSeen.replaceChildren(icon('hexcheck'), `Marcar ${n} como vistas`);
-      confirmLater.replaceChildren(icon('bookmark'), `Añadir ${n} a pendientes`);
+      fill(confirmSeen, icon('hexcheck'), `Marcar ${n} como vistas`);
+      fill(confirmLater, icon('bookmark'), `Añadir ${n} a pendientes`);
       confirmSeen.disabled = confirmLater.disabled = !n;
     };
 
@@ -109,13 +112,19 @@ export function openQuickList(ctx) {
     });
     confirmLater.addEventListener('click', () => {
       let added = 0;
-      for (const r of rows) if (r.on && r.pick) { store.setWatchlist(r.pick, true); added++; }
-      ctx.toast(`Añadidas ${added} a pendientes.`);
+      for (const r of rows) {
+        if (!r.on || !r.pick) continue;
+        const it = store.getItem(`${r.pick.type}:${r.pick.id}`);
+        if (it && (it.status === 'watched' || it.status === 'completed' || it.status === 'watchlist')) continue;
+        store.setWatchlist(r.pick, true);
+        added++;
+      }
+      ctx.toast(added ? `Añadidas ${added} a pendientes.` : 'Ya estaban en su registro.');
       sheet.close();
     });
 
     paint();
-    inner.replaceChildren(
+    fill(inner, 
       h('div', { style: { display: 'grid', gap: '8px', paddingRight: '44px' } },
         h('p', { class: 'eyebrow' }, 'Lista rápida'),
         h('h2', { class: 'h1' }, 'Confirme la lista'),

@@ -22,6 +22,7 @@ export function listen({ lang = 'es-ES' } = {}) {
 export function attachMic(button, input, onText) {
   if (!voiceSupported()) { button.hidden = true; return; }
   button.addEventListener('click', async () => {
+    if (button.classList.contains('listening')) return;
     button.classList.add('listening');
     try {
       const said = await listen();

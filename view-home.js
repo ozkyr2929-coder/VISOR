@@ -1,7 +1,9 @@
 // Inicio: greeting, this year's count, series in progress, watchlist and latest entries.
-import { h, icon, posterImg, personImg, starsLabel, MONTHS_SHORT } from './ui.js';
+import { h, icon, posterImg, personImg, starsLabel, MONTHS_SHORT, fill } from './ui.js';
 import { computeStats, diaryEntries, greeting, nextSeason, todayISO, favoritesOf, pickCharacter } from './model.js';
 import { projector, shuffle } from './fx.js';
+import { nextTrophy } from './trophies.js';
+import { medal } from './trophy-art.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 function reactor() {
@@ -41,7 +43,7 @@ function characterCard(ctx) {
     box.classList.add('scanning');
     const it = list[((seed % list.length) + list.length) % list.length];
     try {
-      const c = await ctx.credits.get(it.type, it.id);
+      const c = await ctx.library.get(it.type, it.id);
       const pick = pickCharacter({ [it.key]: c }, [it.key], seed);
       if (!pick) { if (++tries < 4) { seed++; return scan(); } box.hidden = true; return; }
       tries = 0;
@@ -51,16 +53,16 @@ function characterCard(ctx) {
   function paint(p, it) {
     box.hidden = false;
     box.classList.remove('scanning');
-    box.replaceChildren(
-      h('div', { class: 'ident-photo' }, personImg(p, 'w185'), h('span', { class: 'reticle' }), h('span', { class: 'ident-scanline' })),
+    const actor = ctx.openPerson && p.name
+      ? h('button', { class: 'ident-link', type: 'button', onClick: () => ctx.openPerson({ id: p.personId, name: p.name, photo: p.photo }) }, p.name)
+      : h('span', {}, p.name);
+    fill(box, 
+      h('div', { class: 'ident-photo', 'aria-hidden': 'true' }, h('div', { class: 'ident-ph' }, personImg(p, 'w185'), h('span', { class: 'ident-scanline' })), h('span', { class: 'ident-ring' })),
       h('div', { class: 'ident-body' },
-        h('p', { class: 'eyebrow' }, 'Personaje del día · identificado'),
-        h('p', { class: 'ident-name' }, p.character || p.name),
-        h('p', { class: 'muted' }, p.character ? `Interpretado por ${p.name}` : 'En el reparto'),
-        h('p', { class: 'mono faint' }, `${p.title.toUpperCase()}${p.year ? ` · ${p.year}` : ''}`),
-        h('div', { class: 'btn-row' },
-          h('button', { class: 'btn small', type: 'button', onClick: () => ctx.openDetail(it.type, it.id) }, 'Ver ficha'),
-          h('button', { class: 'btn ghost small', type: 'button', onClick: () => { seed++; scan(); } }, icon('scan'), 'Escanear otro'))));
+        h('p', { class: 'ident-eyebrow' }, 'Personaje del día'),
+        h('button', { class: 'ident-name', type: 'button', onClick: () => ctx.openDetail(it.type, it.id), 'aria-label': `${p.character || p.name}, de ${p.title}: abrir ficha` }, p.character || p.name),
+        h('p', { class: 'ident-sub' }, p.character ? actor : null, p.character ? ' · ' : null, h('span', { class: 'ident-film' }, `${p.title}${p.year ? ` (${p.year})` : ''}`))),
+      h('button', { class: 'icon-btn ident-rescan', type: 'button', 'aria-label': 'Escanear otro personaje', title: 'Escanear otro', onClick: () => { seed++; scan(); } }, icon('scan')));
   }
   scan();
   return box;
@@ -102,7 +104,7 @@ export function render(root, ctx) {
       ? `Registro activo: ${live.length} títulos. ${watching.length ? `${watching.length} ${watching.length === 1 ? 'serie' : 'series'} en curso` : 'Ninguna serie en curso'} y ${watchlist.length} ${watchlist.length === 1 ? 'pendiente' : 'pendientes'}.`
       : 'Su registro está vacío. Empecemos por lo que ya ha visto.';
 
-    page.replaceChildren(...[
+    fill(page, ...[
       h('section', { class: `home-hero${scenes.length ? ' screen' : ''}` }, stage.node,
         h('div', { class: 'reactor' }, reactor(),
           h('div', { class: 'reactor-core' }, h('b', {}, String(thisYear)), h('span', {}, `Vistas ${year}`))),
@@ -129,6 +131,12 @@ export function render(root, ctx) {
         h('div', { class: 'btn-row' }, h('a', { class: 'btn solid', href: '#catalogo' }, icon('grid'), 'Ponerme al día'))) : null,
 
       character,
+
+      (next => next ? h('button', { class: 'next-trophy home-next', type: 'button', onClick: () => ctx.openTrophy(next.id) },
+        medal(next, { size: 44, label: false }),
+        h('span', { class: 'nt-body' }, h('span', { class: 'nt-eyebrow' }, 'Próximo trofeo'), h('b', {}, next.name), h('span', { class: 'nt-desc' }, next.desc)),
+        h('span', { class: 'nt-side' }, h('span', { class: 'mono nt-count' }, `${next.progress}/${next.goal}`),
+          h('span', { class: 'progress' }, h('i', { style: { width: `${Math.round((next.progress / next.goal) * 100)}%` } })))) : null)(nextTrophy(ctx.trophies().list)),
 
       watching.length ? h('section', {},
         h('div', { class: 'section-head' }, h('h2', { class: 'h2' }, 'Series en curso')),

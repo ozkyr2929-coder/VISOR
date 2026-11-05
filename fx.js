@@ -5,21 +5,28 @@ import { h } from './ui.js';
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Floating light dust, like the beam of a projector.
+// Phones get fewer motes at 30 fps, and the dust rests while the page scrolls or is hidden.
 export function startDust(canvas) {
   if (!canvas || reduced()) return;
   const ctx = canvas.getContext('2d');
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  let w = 0, hgt = 0, motes = [], running = true, last = 0;
+  const touch = matchMedia('(hover: none)').matches;
+  const dpr = Math.min(touch ? 1.5 : 2, window.devicePixelRatio || 1);
+  const step = touch ? 1000 / 30 : 0;
+  let w = 0, hgt = 0, motes = [], last = 0, drawn = 0, raf = 0, scrollTimer = 0, scrolling = false;
   const resize = () => {
     w = canvas.clientWidth; hgt = canvas.clientHeight;
     canvas.width = w * dpr; canvas.height = hgt * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const n = w < 700 ? 22 : 42;
+    const n = touch ? 14 : w < 700 ? 22 : 42;
     motes = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * hgt, r: 0.5 + Math.random() * 1.4,
       vx: 4 + Math.random() * 8, vy: -3 - Math.random() * 6, a: Math.random() * Math.PI * 2, s: 0.6 + Math.random() * 1.2 }));
   };
   const frame = t => {
-    if (!running) return;
+    raf = 0;
+    if (document.visibilityState !== 'visible' || scrolling) return;
+    raf = requestAnimationFrame(frame);
+    if (step && t - drawn < step) return;
+    drawn = t;
     const dt = Math.min(0.05, (t - last) / 1000 || 0); last = t;
     ctx.clearRect(0, 0, w, hgt);
     for (const m of motes) {
@@ -32,16 +39,17 @@ export function startDust(canvas) {
       ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
       ctx.fill();
     }
-    requestAnimationFrame(frame);
   };
+  const wake = () => { if (!raf && !scrolling && document.visibilityState === 'visible') { last = performance.now(); raf = requestAnimationFrame(frame); } };
   resize();
   window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', () => {
-    const was = running;
-    running = document.visibilityState === 'visible';
-    if (running && !was) requestAnimationFrame(frame);
-  });
-  requestAnimationFrame(frame);
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('scroll', () => {
+    scrolling = true;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => { scrolling = false; wake(); }, 180);
+  }, { passive: true });
+  wake();
 }
 
 // Posters lean towards the pointer and catch the light (mouse and trackpad only).
@@ -66,7 +74,7 @@ export function initTilt() {
 }
 
 // Crossfading backdrops with a slow push-in. Returns a node and a stop function.
-export function projector(backdrops, { size = 'w1280', every = 7000 } = {}) {
+export function projector(backdrops, { size = innerWidth < 900 ? 'w780' : 'w1280', every = 7000 } = {}) {
   const paths = backdrops.filter(Boolean);
   const stage = h('div', { class: 'projector', 'aria-hidden': 'true' });
   if (!paths.length) return { node: stage, stop() {} };
@@ -84,7 +92,7 @@ export function projector(backdrops, { size = 'w1280', every = 7000 } = {}) {
     i++;
   };
   show();
-  if (paths.length > 1 && !reduced()) timer = setInterval(show, every);
+  if (paths.length > 1 && !reduced()) timer = setInterval(() => { if (document.visibilityState === 'visible' && stage.isConnected) show(); }, every);
   return { node: stage, stop() { clearInterval(timer); } };
 }
 

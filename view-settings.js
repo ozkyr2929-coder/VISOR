@@ -1,10 +1,10 @@
 // Ajustes: name, TMDB key, GitHub sync, backup, erase, credits. Also the first-run welcome.
-import { h, icon, openSheet } from './ui.js';
+import { h, icon, openSheet, fill } from './ui.js';
 import { mergeStates, todayISO } from './model.js';
 
 const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=VISOR';
 const TMDB_API_URL = 'https://www.themoviedb.org/settings/api';
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 export function render(root, ctx) {
   const { store, tmdb, sync } = ctx;
@@ -144,7 +144,7 @@ export function render(root, ctx) {
   }
 
   function draw() {
-    page.replaceChildren(
+    fill(page, 
       h('header', { style: { display: 'grid', gap: '10px' } }, h('p', { class: 'eyebrow' }, 'Ajustes'), h('h1', { class: 'h1' }, 'Configuración del sistema')),
       h('div', { class: 'split' },
         h('div', { style: { display: 'grid', gap: '18px' } }, nameSection(), tmdbSection()),
@@ -152,9 +152,11 @@ export function render(root, ctx) {
       aboutSection());
   }
 
-  const off = sync.onStatus(() => { if (!busy && !linking) draw(); });
+  // Never redraw under the user's fingers: a sync finishing while they type would wipe the field.
+  const safeDraw = () => { if (!busy && !linking && !(document.activeElement && document.activeElement.closest('.page input, .page textarea'))) draw(); };
+  const off = sync.onStatus(safeDraw);
   draw();
-  return { update() { if (!busy && !linking && !document.activeElement?.closest('.page input')) draw(); }, destroy: off };
+  return { update: safeDraw, destroy: off };
 }
 
 export function openWelcome(ctx) {

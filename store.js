@@ -159,6 +159,22 @@ export function createStore(storage, now = Date.now) {
       return commit(it);
     },
 
+    // Metadata filled in the background (runtime of titles marked in bulk). It keeps the edit time,
+    // so it never wins over a change made on another device; each device fills its own copy.
+    patchMeta(patches) {
+      let changed = false;
+      for (const [key, fields] of Object.entries(patches || {})) {
+        const it = getItem(key);
+        if (!it) continue;
+        for (const [f, v] of Object.entries(fields)) {
+          if (v == null || !META_FIELDS.includes(f) || JSON.stringify(it[f]) === JSON.stringify(v)) continue;
+          it[f] = v;
+          changed = true;
+        }
+      }
+      if (changed) save(false);
+    },
+
     removeItem(key) { state.items[key] = { key, deleted: true, updatedAt: now() }; save(); },
 
     // Tombstones (not a reset) so the deletion also reaches the other devices.

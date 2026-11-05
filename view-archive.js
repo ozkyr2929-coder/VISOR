@@ -1,5 +1,5 @@
 // Archivo: diary by month, everything seen (with quick rating), watchlist and series.
-import { h, posterImg, starsInput, starsLabel, emptyState, MONTHS, MONTHS_SHORT, STATUS_LABEL } from './ui.js';
+import { h, posterImg, starsInput, starsLabel, emptyState, MONTHS, MONTHS_SHORT, STATUS_LABEL, fill } from './ui.js';
 import { diaryEntries } from './model.js';
 
 const TABS = [['diario', 'Diario'], ['vistas', 'Vistas'], ['pendientes', 'Pendientes'], ['series', 'Series']];
@@ -119,10 +119,10 @@ export function render(root, ctx) {
   }
 
   function draw() {
-    tabs.replaceChildren(...TABS.map(([id, label]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(state.tab === id),
+    fill(tabs, ...TABS.map(([id, label]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(state.tab === id),
       onClick: () => { state.tab = id; state.limit = PAGE; persist(); draw(); } }, label)));
     const view = { diario: diary, vistas: seenList, pendientes: watchlist, series }[state.tab] || diary;
-    body.replaceChildren(...view().filter(Boolean));
+    fill(body, ...view().filter(Boolean));
   }
 
   draw();

@@ -1,5 +1,5 @@
 // Ficha: everything about one title, plus the user's own log for it.
-import { h, icon, openSheet, posterImg, personImg, starsInput, formatDate, loading, errorText, STATUS_LABEL } from './ui.js';
+import { h, icon, openSheet, posterImg, personImg, starsInput, formatDate, loading, errorText, STATUS_LABEL, fill } from './ui.js';
 import { img } from './tmdb.js';
 import { formatMinutes, todayISO } from './model.js';
 import { genreName } from './genres.js';
@@ -30,8 +30,8 @@ export function openDetail(ctx, type, id, onUserClose) {
   function drawShell() {
     const it = store.getItem(key);
     const d = info || it;
-    if (!d) { inner.replaceChildren(h('div', { class: 'sheet-inner' }, loading())); return; }
-    const backdrop = img(d.backdrop, 'w1280');
+    if (!d) { fill(inner, h('div', { class: 'sheet-inner' }, loading())); return; }
+    const backdrop = img(d.backdrop, innerWidth < 900 ? 'w780' : 'w1280');
     const facts = [];
     if (d.year) facts.push(String(d.year));
     if (type === 'movie' && d.runtime) facts.push(formatMinutes(d.runtime));
@@ -43,7 +43,7 @@ export function openDetail(ctx, type, id, onUserClose) {
     if (info && info.vote) facts.push(`TMDB ${info.vote.toFixed(1).replace('.', ',')}`);
     const genres = info ? info.genreNames : (d.genres || []).map(genreName);
 
-    inner.replaceChildren(
+    fill(inner, 
       h('div', { class: 'hero' }, backdrop ? h('img', { src: backdrop, alt: '', crossorigin: 'anonymous', decoding: 'async' }) : null),
       h('div', { class: 'sheet-inner' },
         h('div', { class: 'detail-head' },
@@ -66,12 +66,12 @@ export function openDetail(ctx, type, id, onUserClose) {
     return h('section', { style: { display: 'grid', gap: '18px' } },
       info.tagline ? h('p', { class: 'h3', style: { color: 'var(--arc)' } }, info.tagline) : null,
       info.overview ? h('p', { class: 'lead', style: { color: 'var(--ink)' } }, info.overview) : null,
-      h('dl', { class: 'kv' },
-        info.people.length ? [h('dt', {}, type === 'tv' ? 'Creación' : 'Dirección'), h('dd', {}, info.people.join(', '))] : null,
-        null),
+      info.directors.length ? h('div', { class: 'stack', style: { gap: '8px' } },
+        h('p', { class: 'eyebrow' }, type === 'tv' ? 'Creación' : 'Dirección'),
+        h('div', { class: 'directors' }, info.directors.map(d => h('button', { class: 'director', type: 'button', onClick: () => ctx.openPerson(d) }, d.name)))) : null,
       info.cast.length ? h('div', { style: { display: 'grid', gap: '10px' } },
         h('p', { class: 'eyebrow' }, 'Reparto'),
-        h('div', { class: 'cast-row' }, info.cast.slice(0, 12).map(c => h('div', { class: 'cast-card' },
+        h('div', { class: 'cast-row' }, info.cast.slice(0, 12).map(c => h('button', { class: 'cast-card', type: 'button', onClick: () => ctx.openPerson(c), 'aria-label': `${c.name}${c.character ? `, ${c.character}` : ''}: filmografía` },
           h('div', { class: 'ph tilt' }, personImg(c, 'w185')),
           h('b', {}, c.name),
           c.character ? h('span', {}, c.character) : null)))) : null,
@@ -101,7 +101,7 @@ export function openDetail(ctx, type, id, onUserClose) {
             h('button', { class: 'btn ghost small', type: 'button', onClick: () => { confirmRemove = false; drawLog(); } }, 'Cancelar'))
         : h('div', {}, h('button', { class: 'btn ghost small', type: 'button', onClick: () => { confirmRemove = true; drawLog(); } }, icon('trash'), 'Quitar de mi registro')));
     }
-    logBox.replaceChildren(...parts);
+    fill(logBox, ...parts);
   }
 
   function noteField(it) {
@@ -208,9 +208,11 @@ export function openDetail(ctx, type, id, onUserClose) {
     // Keep stored metadata fresh (poster, seasons) for titles already in the log.
     const it = store.getItem(key);
     if (it && type === 'tv' && d.seasons && JSON.stringify(d.seasons) !== JSON.stringify(it.seasons)) store.setSeasons(key, d.seasons);
+    // Titles marked in bulk arrive without runtime or genres: fill them in quietly.
+    if (it && (!it.runtime || !(it.genres || []).length)) store.patchMeta({ [key]: { runtime: d.runtime, genres: d.genres && d.genres.length ? d.genres : undefined } });
     drawShell();
   }).catch(e => {
-    if (!store.getItem(key)) inner.replaceChildren(h('div', { class: 'sheet-inner' }, h('p', { class: 'status-line err', style: { paddingRight: '44px' } }, errorText(e))));
+    if (!store.getItem(key)) fill(inner, h('div', { class: 'sheet-inner' }, h('p', { class: 'status-line err', style: { paddingRight: '44px' } }, errorText(e))));
     else drawShell();
   });
 

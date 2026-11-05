@@ -1,6 +1,8 @@
 // Perfil: the user's cinephile dossier — favourites, their characters, directors, taste and badges.
-import { h, icon, posterImg, personImg, openSheet, emptyState, loading, MONTHS } from './ui.js';
-import { favoritesOf, achievements, topPeople, computeStats, decadeCounts, memberSince, normalizeTitle } from './model.js';
+import { h, icon, posterImg, personImg, openSheet, emptyState, loading, MONTHS, fill } from './ui.js';
+import { favoritesOf, topPeople, computeStats, decadeCounts, memberSince, normalizeTitle } from './model.js';
+import { nextTrophy, TIERS } from './trophies.js';
+import { medal } from './trophy-art.js';
 import { genreName } from './genres.js';
 import { projector, shuffle } from './fx.js';
 import { img } from './tmdb.js';
@@ -40,12 +42,6 @@ function decadesChart(counts) {
       h('i', { style: { height: `${Math.max(6, (n / max) * 100)}%` } }), h('b', {}, String(n)), h('span', {}, label(d)))));
 }
 
-const hexBadge = on => {
-  const s = icon(on ? 'hexcheck' : 'scan', { width: '1.4' });
-  s.setAttribute('class', 'hex');
-  return s;
-};
-
 export function openFavoritePicker(ctx) {
   const { store } = ctx;
   const input = h('input', { class: 'input', id: 'fav-search', type: 'search', placeholder: 'Buscar en lo que ha visto', autocomplete: 'off' });
@@ -60,7 +56,7 @@ export function openFavoritePicker(ctx) {
       .sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
     const favCount = Object.values(store.getState().items).filter(it => !it.deleted && it.favorite).length;
     counter.textContent = `${favCount} ${favCount === 1 ? 'FAVORITA' : 'FAVORITAS'}`;
-    grid.replaceChildren(...all.slice(0, limit).map(it => {
+    fill(grid, ...all.slice(0, limit).map(it => {
       const b = h('button', { class: `card pick-card${it.favorite ? ' on' : ''}`, type: 'button', 'aria-pressed': String(Boolean(it.favorite)), 'aria-label': `${it.title}: favorita` },
         h('div', { class: 'poster' }, posterImg(it, 'w342'), h('span', { class: 'heart' }, icon('heart'))),
         h('div', { class: 'title' }, it.title));
@@ -74,8 +70,8 @@ export function openFavoritePicker(ctx) {
       });
       return b;
     }));
-    more.replaceChildren(all.length > limit ? h('button', { class: 'btn ghost', type: 'button', onClick: () => { limit += 120; paint(); } }, `Mostrar más (${all.length - limit})`) : null);
-    if (!all.length) grid.replaceChildren(emptyState(q ? 'Nada con ese título' : 'Aún no hay nada visto', q ? '' : 'Marque primero lo que ha visto desde el Catálogo.'));
+    fill(more, all.length > limit ? h('button', { class: 'btn ghost', type: 'button', onClick: () => { limit += 120; paint(); } }, `Mostrar más (${all.length - limit})`) : null);
+    if (!all.length) fill(grid, emptyState(q ? 'Nada con ese título' : 'Aún no hay nada visto', q ? '' : 'Marque primero lo que ha visto desde el Catálogo.'));
   };
   input.addEventListener('input', paint);
   openSheet(h('div', { class: 'sheet-inner' },
@@ -88,7 +84,7 @@ export function openFavoritePicker(ctx) {
 }
 
 export function render(root, ctx) {
-  const { store, credits } = ctx;
+  const { store, library } = ctx;
   const page = h('div', { class: 'page' });
   root.append(page);
   let stage = null;
@@ -100,15 +96,15 @@ export function render(root, ctx) {
     if (people.keys === keys) return people.node;
     const node = h('div', { style: { display: 'grid', gap: '22px' } }, loading('Analizando el reparto de sus favoritas'));
     people = { keys, node };
-    credits.many(favs).then(cache => {
+    library.many(favs).then(cache => {
       if (people.keys !== keys) return;
       const { actors, directors } = topPeople(cache, favs.map(f => f.key));
-      if (!actors.length) { node.replaceChildren(h('p', { class: 'muted' }, 'No he podido cargar el reparto. Compruebe la conexión y su clave de TMDB.')); return; }
-      node.replaceChildren(
+      if (!actors.length) { fill(node, h('p', { class: 'muted' }, 'No he podido cargar el reparto. Compruebe la conexión y su clave de TMDB.')); return; }
+      fill(node, 
         h('div', { class: 'cast-row' }, actors.map(a => {
           const first = a.roles[0];
           const [type, id] = first.key.split(':');
-          return h('button', { class: 'cast-card', type: 'button', onClick: () => ctx.openDetail(type, Number(id)) },
+          return h('button', { class: 'cast-card', type: 'button', onClick: () => (a.id != null ? ctx.openPerson(a) : ctx.openDetail(type, Number(id))) },
             h('div', { class: 'ph tilt' }, personImg(a, 'w185'), a.count > 1 ? h('span', { class: 'times' }, `×${a.count}`) : null),
             h('b', {}, a.name),
             ...a.roles.slice(0, 2).map(r => h('span', {}, r.character ? `${r.character} · ${r.title}` : r.title)),
@@ -116,7 +112,7 @@ export function render(root, ctx) {
         })),
         directors.length ? h('div', { style: { display: 'grid', gap: '10px' } },
           h('p', { class: 'eyebrow' }, 'Dirección y creación de cabecera'),
-          h('div', { class: 'directors' }, directors.map(d => h('span', { class: 'director' }, d.name, d.count > 1 ? h('b', {}, ` ×${d.count}`) : null)))) : null);
+          h('div', { class: 'directors' }, directors.map(d => h('button', { class: 'director', type: 'button', onClick: () => ctx.openPerson(d) }, d.name, d.count > 1 ? h('b', {}, ` ×${d.count}`) : null)))) : null);
     });
     return node;
   }
@@ -136,10 +132,11 @@ export function render(root, ctx) {
     const pickBtn = () => h('button', { class: 'btn', type: 'button', onClick: () => openFavoritePicker(ctx) }, icon('heart'), favs.length ? 'Editar favoritas' : 'Elegir favoritas');
     const genres = computeStats(items).topGenres;
     const decades = decadeCounts(items);
-    const badges = achievements(items);
-    const unlocked = badges.filter(b => b.unlocked).length;
+    const ev = ctx.trophies();
+    const recent = ev.list.filter(t => t.unlocked).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 6);
+    const next = nextTrophy(ev.list);
 
-    page.replaceChildren(...[
+    fill(page, ...[
       h('section', { class: 'dossier' }, stage.node,
         h('div', { class: 'dossier-body' },
           h('p', { class: 'eyebrow' }, 'Expediente cinéfilo'),
@@ -178,15 +175,23 @@ export function render(root, ctx) {
           h('p', { class: 'muted', style: { fontSize: 'var(--t-sm)' } }, 'Lo que ha visto, por década de estreno.'),
           Object.keys(decades).length ? decadesChart(decades) : h('p', { class: 'muted' }, 'Sin datos todavía.'))) : null,
 
-      h('section', { style: { display: 'grid', gap: '14px' } },
-        h('div', { class: 'section-head' }, h('h2', { class: 'h2' }, 'Insignias'), h('span', { class: 'mono faint' }, `${unlocked}/${badges.length} DESBLOQUEADAS`)),
-        h('div', { class: 'badges' }, badges.map(b => h('div', { class: `badge-card${b.unlocked ? ' on' : ''}` },
-          hexBadge(b.unlocked),
+      h('section', { class: 'showcase frame' },
+        h('div', { class: 'showcase-head' },
+          h('button', { class: 'rank-emblem small', type: 'button', onClick: () => ctx.go('trofeos'), 'aria-label': 'Abrir la sala de trofeos' },
+            medal({ unlocked: true, tier: ev.rank.level >= 7 ? 'platinum' : ev.rank.level >= 5 ? 'gold' : ev.rank.level >= 3 ? 'silver' : 'bronze', icon: 'crown', name: ev.rank.name, goal: 1, progress: 1 }, { size: 64, label: false })),
           h('div', { style: { display: 'grid', gap: '4px', minWidth: '0' } },
-            h('b', {}, b.title),
-            h('p', {}, b.desc),
-            h('div', { class: 'progress' }, h('i', { style: { width: `${Math.min(100, (b.progress / b.goal) * 100)}%` } })),
-            h('span', { class: 'mono faint', style: { fontSize: '11px' } }, `${Math.min(b.progress, b.goal)} / ${b.goal}`)))))),
+            h('p', { class: 'eyebrow' }, 'Sala de trofeos'),
+            h('p', { class: 'rank-name' }, ev.rank.name),
+            h('p', { class: 'mono', style: { color: 'var(--amber)', fontSize: 'var(--t-sm)' } }, `${ev.points} PUNTOS · ${ev.unlocked}/${ev.total} TROFEOS`),
+            h('div', { class: 'progress rank-bar' }, h('i', { style: { width: `${Math.round(ev.rank.progress * 100)}%` } })))),
+        recent.length ? h('div', { class: 'showcase-shelf' }, recent.map(t =>
+          h('button', { class: 'showcase-medal', type: 'button', onClick: () => ctx.openTrophy(t.id), 'aria-label': `${t.name}, ${TIERS[t.tier].label}` }, medal(t, { size: 58, label: false }), h('span', {}, t.name))))
+          : h('p', { class: 'muted' }, 'Aún no hay trofeos en su vitrina. El primero llega con la primera película.'),
+        next ? h('button', { class: 'next-trophy', type: 'button', onClick: () => ctx.openTrophy(next.id) },
+          medal(next, { size: 40, label: false }),
+          h('span', { class: 'nt-body' }, h('span', { class: 'nt-eyebrow' }, 'Próximo trofeo'), h('b', {}, next.name), h('span', { class: 'nt-desc' }, next.desc)),
+          h('span', { class: 'mono nt-count' }, `${next.progress}/${next.goal}`)) : null,
+        h('div', {}, h('a', { class: 'btn solid', href: '#trofeos' }, icon('trophy'), 'Ver todos los trofeos'))),
     ].filter(Boolean));
   }
 

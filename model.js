@@ -185,54 +185,31 @@ export function decadeCounts(items) {
   return out;
 }
 
-const BADGES = [
-  ['first', 'Primera función', 'Registre su primera película.', 1, 'movies'],
-  ['cinefilo', 'Cinéfilo', '50 películas vistas.', 50, 'movies'],
-  ['devorador', 'Devorador de celuloide', '250 películas vistas.', 250, 'movies'],
-  ['leyenda', 'Leyenda de la filmoteca', '1000 películas vistas.', 1000, 'movies'],
-  ['maraton', 'Maratón', '25 temporadas vistas.', 25, 'seasons'],
-  ['showrunner', 'Showrunner', '10 series terminadas.', 10, 'tvCompleted'],
-  ['viajero', 'Viajero en el tiempo', 'Películas de 6 décadas distintas.', 6, 'decades'],
-  ['clasicos', 'Alma clásica', '10 películas anteriores a 1980.', 10, 'classics'],
-  ['critico', 'Crítico', '50 títulos puntuados.', 50, 'rated'],
-  ['corazon', 'Corazón de cine', '10 favoritas elegidas.', 10, 'favorites'],
-  ['milhoras', 'Mil horas de pantalla', '1000 horas entre pelis y series.', 1000, 'hours'],
-];
-
-export function achievements(items) {
-  const s = computeStats(items);
-  const seen = live(items).filter(isSeenItem);
-  const movies = seen.filter(it => it.type === 'movie' && it.status === 'watched');
-  const values = {
-    movies: s.movies, seasons: s.seasons, tvCompleted: s.tvCompleted,
-    decades: new Set(movies.filter(m => m.year).map(m => Math.floor(m.year / 10))).size,
-    classics: movies.filter(m => m.year && m.year < 1980).length,
-    rated: seen.filter(it => it.rating != null).length,
-    favorites: live(items).filter(it => it.favorite).length,
-    hours: Math.floor(s.minutes / 60),
-  };
-  return BADGES.map(([id, title, desc, goal, metric]) => ({ id, title, desc, goal, progress: values[metric], unlocked: values[metric] >= goal }));
-}
-
 // Actors and directors that repeat across the given titles. `credits[key]` = {title, cast, directors}.
+// Directors come as {id, name} (library) or plain names (older caches).
 export function topPeople(credits, keys) {
   const actors = new Map(), directors = new Map();
   for (const key of keys) {
     const c = credits[key];
     if (!c) continue;
     for (const p of (c.cast || []).slice(0, 8)) {
-      const a = actors.get(p.name) || { name: p.name, photo: null, roles: [], count: 0 };
+      const a = actors.get(p.name) || { id: p.id ?? null, name: p.name, photo: null, roles: [], count: 0 };
       a.photo = a.photo || p.photo || null;
       a.roles.push({ character: p.character || '', title: c.title, key });
       a.count++;
       actors.set(p.name, a);
     }
-    for (const d of c.directors || []) directors.set(d, (directors.get(d) || 0) + 1);
+    for (const d of c.directors || []) {
+      const name = typeof d === 'string' ? d : d.name;
+      const cur = directors.get(name) || { id: typeof d === 'string' ? null : d.id ?? null, name, count: 0 };
+      cur.count++;
+      directors.set(name, cur);
+    }
   }
   const byCount = (p, q) => q.count - p.count || p.name.localeCompare(q.name, 'es');
   return {
     actors: [...actors.values()].sort(byCount).slice(0, 12),
-    directors: [...directors].map(([name, count]) => ({ name, count })).sort(byCount).slice(0, 8),
+    directors: [...directors.values()].sort(byCount).slice(0, 8),
   };
 }
 
@@ -242,7 +219,7 @@ export function pickCharacter(credits, keys, seed) {
   for (const key of keys) {
     const c = credits[key];
     if (!c) continue;
-    for (const p of (c.cast || []).slice(0, 6)) all.push({ key, title: c.title, year: c.year || null, name: p.name, character: p.character || '', photo: p.photo || null });
+    for (const p of (c.cast || []).slice(0, 6)) all.push({ key, title: c.title, year: c.year || null, name: p.name, personId: p.id || null, character: p.character || '', photo: p.photo || null });
   }
   const pool = [all.filter(p => p.photo && p.character), all.filter(p => p.photo), all].find(list => list.length);
   if (!pool) return null;

@@ -1,5 +1,6 @@
 // Catálogo: search, plus shelves to catch up by tapping posters (one tap = seen).
-import { h, icon, posterCard, setCardWatched, loading, emptyState, errorText } from './ui.js';
+import { h, icon, posterCard, posterImg, personImg, setCardWatched, loading, emptyState, errorText, fill } from './ui.js';
+import { SAGA_GROUPS, STUDIOS } from './sagas.js';
 import { MOVIE_GENRES, TV_GENRES } from './genres.js';
 import { attachMic } from './voice.js';
 
@@ -11,20 +12,6 @@ const DECADES = [
   { id: '1980', label: 'Años 80', from: '1980-01-01', to: '1989-12-31' },
   { id: 'old', label: 'Antes de 1980', from: null, to: '1979-12-31' },
 ];
-// Label shown → name TMDB knows the collection by.
-const SAGAS = [
-  ['Harry Potter', 'Harry Potter'], ['Star Wars', 'Star Wars'], ['El Señor de los Anillos', 'The Lord of the Rings'],
-  ['El Hobbit', 'The Hobbit'], ['Los Vengadores', 'The Avengers'], ['Jurassic Park', 'Jurassic Park'],
-  ['Regreso al futuro', 'Back to the Future'], ['Piratas del Caribe', 'Pirates of the Caribbean'], ['Toy Story', 'Toy Story'],
-  ['Indiana Jones', 'Indiana Jones'], ['El Padrino', 'The Godfather'], ['Matrix', 'The Matrix'],
-  ['El caballero oscuro', 'The Dark Knight'], ['Fast & Furious', 'The Fast and the Furious'], ['Misión: Imposible', 'Mission: Impossible'],
-  ['James Bond', 'James Bond'], ['Los juegos del hambre', 'The Hunger Games'], ['Crepúsculo', 'The Twilight'],
-  ['Shrek', 'Shrek'], ['Gru, mi villano favorito', 'Despicable Me'], ['Ice Age', 'Ice Age'], ['Alien', 'Alien'],
-  ['Terminator', 'The Terminator'], ['Rocky', 'Rocky'], ['John Wick', 'John Wick'], ['Mad Max', 'Mad Max'],
-  ['Dune', 'Dune'], ['Torrente', 'Torrente'],
-];
-const STUDIOS = ['Pixar', 'Marvel Studios', 'Studio Ghibli', 'Walt Disney Animation Studios', 'DreamWorks Animation', 'Lucasfilm Ltd.', 'A24'];
-
 const SOURCES = [
   { id: 'top', label: 'Imprescindibles' },
   { id: 'rated', label: 'Mejor valoradas' },
@@ -37,8 +24,9 @@ const SOURCES = [
 ];
 
 // Survives navigating away and back.
-const state = { type: 'movie', source: 'top', option: null, query: '', session: 0 };
+const state = { type: 'movie', source: 'top', option: null, saga: null, query: '', session: 0 };
 let providerCache = { movie: null, tv: null };
+const sagaCache = new Map(); // collection id → { name, poster, parts, upcoming }
 
 export function render(root, ctx) {
   const { store, tmdb } = ctx;
@@ -68,7 +56,7 @@ export function render(root, ctx) {
   const optionChips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Opciones' });
   const counter = h('div', { class: 'counter', 'aria-live': 'polite' });
   const intro = h('p', { class: 'lead' });
-  const listHead = h('div');
+  const listHead = h('div', { class: 'stack' });
   const grid = h('div', { class: 'grid' });
   const status = h('div');
   const sentinel = h('div', { class: 'sentinel' });
@@ -83,13 +71,13 @@ export function render(root, ctx) {
       h('div', { class: 'btn-row' }, quick, typeSeg)),
     h('div', { class: 'browse', style: { display: 'grid', gap: '10px' } }, sourceChips, optionChips),
     counter,
-    h('div', { style: { display: 'grid', gap: '14px' } }, listHead, grid, status, sentinel),
+    h('div', { class: 'stack' }, listHead, grid, status, sentinel),
   );
   root.append(page);
 
   function paintCounter() {
     const total = Object.values(store.getState().items).filter(i => !i.deleted && (i.status === 'watched' || i.status === 'completed')).length;
-    counter.replaceChildren(icon('hexcheck'), `${state.session} MARCADAS AHORA · ${total} VISTAS EN TOTAL`);
+    fill(counter, icon('hexcheck'), `${state.session} MARCADAS AHORA · ${total} VISTAS EN TOTAL`);
   }
 
   function paintControls() {
@@ -97,7 +85,7 @@ export function render(root, ctx) {
     intro.textContent = searching
       ? 'Toque un resultado para abrir su ficha.'
       : 'Toque una carátula para marcarla como vista y otra vez para deshacerlo. La «i» abre la ficha.';
-    typeSeg.replaceChildren(...[['movie', 'Pelis'], ['tv', 'Series']].map(([t, label]) =>
+    fill(typeSeg, ...[['movie', 'Pelis'], ['tv', 'Series']].map(([t, label]) =>
       h('button', { type: 'button', 'aria-pressed': String(state.type === t), onClick: () => {
         if (state.type === t) return;
         state.type = t;
@@ -106,7 +94,7 @@ export function render(root, ctx) {
         refresh();
       } }, label)));
     page.querySelector('.browse').hidden = searching;
-    sourceChips.replaceChildren(...SOURCES.filter(s => !(s.movieOnly && state.type === 'tv')).map(s =>
+    fill(sourceChips, ...SOURCES.filter(s => !(s.movieOnly && state.type === 'tv')).map(s =>
       h('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.source === s.id), onClick: () => {
         state.source = s.id; state.option = null; refresh();
       } }, s.label)));
@@ -116,7 +104,7 @@ export function render(root, ctx) {
   function setOptions(list, pick) {
     optionChips.hidden = false;
     if (state.option == null && list.length) state.option = list[0].id;
-    optionChips.replaceChildren(...list.map(o => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(String(state.option) === String(o.id)),
+    fill(optionChips, ...list.map(o => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(String(state.option) === String(o.id)),
       onClick: () => { state.option = o.id; pick(); } }, o.label)));
   }
 
@@ -148,22 +136,26 @@ export function render(root, ctx) {
       async next() {
         if (busy || page >= total || my !== gen) return;
         busy = true;
-        status.replaceChildren(loading());
+        fill(status, loading());
         try {
           const r = await fetchPage(page + 1);
           if (my !== gen) return;
           page = r.page; total = r.totalPages;
           addCards(r.results, opts);
-          status.replaceChildren();
+          fill(status);
           // On tall screens the end of the list can still be in view: the observer will not
           // fire again, so keep filling until it scrolls out of reach.
           setTimeout(() => {
             if (my === gen && page < total && sentinel.getBoundingClientRect().top < innerHeight + 800) self.next();
           }, 0);
-          if (!grid.children.length) status.replaceChildren(emptyState('Sin resultados', opts.search ? 'Pruebe con otro título o con el título original.' : 'Esta lista está vacía.'));
+          if (!grid.children.length) {
+            fill(status, opts.search && listHead.querySelector('.person-chip')
+              ? h('p', { class: 'muted' }, 'Ninguna película ni serie con ese nombre. Toque una persona para ver su filmografía.')
+              : emptyState('Sin resultados', opts.search ? 'Pruebe con otro título o con el título original.' : 'Esta lista está vacía.'));
+          }
         } catch (e) {
           if (my !== gen) return;
-          status.replaceChildren(emptyState('No se ha podido cargar', errorText(e), e.code === 'nokey' || e.code === 'unauthorized' ? h('a', { class: 'btn solid', href: '#ajustes' }, 'Ir a Ajustes') : h('button', { class: 'btn', type: 'button', onClick: () => { total = page + 1; self.next(); } }, 'Reintentar')));
+          fill(status, emptyState('No se ha podido cargar', errorText(e), e.code === 'nokey' || e.code === 'unauthorized' ? h('a', { class: 'btn solid', href: '#ajustes' }, 'Ir a Ajustes') : h('button', { class: 'btn', type: 'button', onClick: () => { total = page + 1; self.next(); } }, 'Reintentar')));
         } finally { busy = false; }
       },
     };
@@ -175,45 +167,106 @@ export function render(root, ctx) {
     await loader.next();
   }
 
-  async function sagaView() {
+  // Sagas: a shelf of saga covers with progress, and the chosen saga's films below.
+  function sagaView() {
     const my = gen;
-    setOptions(SAGAS.map(([label, q]) => ({ id: q, label })), refreshList);
-    status.replaceChildren(loading('Localizando saga'));
-    try {
-      const c = await tmdb.collectionByName(String(state.option));
-      if (my !== gen) return;
-      status.replaceChildren();
-      if (!c || !c.parts.length) { status.replaceChildren(emptyState('Saga no encontrada', 'TMDB no tiene esta saga ahora mismo.')); return; }
-      const parts = c.parts;
-      const all = h('button', { class: 'btn solid', type: 'button' });
-      const paintAll = () => {
-        const missing = parts.filter(p => !isSeen(p)).length;
-        all.replaceChildren(icon('hexcheck'), missing ? `Marcar la saga entera (${missing})` : 'Saga completa');
-        all.disabled = !missing;
-      };
-      all.addEventListener('click', () => {
-        for (const p of parts) if (!isSeen(p)) { const r = ctx.toggleSeen(p); if (r.changed) state.session++; }
-        grid.querySelectorAll('.card').forEach(card => setCardWatched(card, true));
-        paintAll(); paintCounter();
-        ctx.toast(`${c.name}: saga registrada.`);
-      });
-      paintAll();
-      listHead.replaceChildren(h('div', { class: 'section-head' }, h('h2', { class: 'h2' }, c.name), all));
-      listHead._paintAll = paintAll;
-      addCards(parts);
-      loader = { done: true, next: async () => {} };
-    } catch (e) {
-      if (my === gen) status.replaceChildren(emptyState('No se ha podido cargar', errorText(e)));
+    setOptions(SAGA_GROUPS.map(g => ({ id: g.id, label: g.label })), () => { state.saga = null; refreshList(); });
+    const group = SAGA_GROUPS.find(g => g.id === state.option) || SAGA_GROUPS[0];
+    if (!group.sagas.some(x => x.id === state.saga)) state.saga = group.sagas[0].id;
+    const cards = new Map();
+    const progressOf = c => (c ? `${c.parts.filter(isSeen).length}/${c.parts.length}` : '—');
+    const paintCard = id => {
+      const card = cards.get(id), c = sagaCache.get(id);
+      if (!card) return;
+      const done = c && c.parts.length && c.parts.every(isSeen);
+      card.classList.toggle('complete', Boolean(done));
+      card.setAttribute('aria-pressed', String(state.saga === id));
+      card.querySelector('.saga-count').textContent = done ? 'COMPLETA' : progressOf(c);
+      const bar = card.querySelector('.progress i');
+      bar.style.width = c && c.parts.length ? `${Math.round((c.parts.filter(isSeen).length / c.parts.length) * 100)}%` : '0%';
+      if (c && c.poster && !card.dataset.poster) { card.dataset.poster = '1'; card.querySelector('.saga-poster').replaceChildren(posterImg({ poster: c.poster, title: card.dataset.label }, 'w185')); }
+    };
+    const shelf = h('div', { class: 'saga-shelf', role: 'group', 'aria-label': `Sagas: ${group.label}` }, group.sagas.map(sg => {
+      const card = h('button', { class: 'saga-card', type: 'button', dataset: { label: sg.label }, onClick: () => {
+        if (state.saga === sg.id) return;
+        state.saga = sg.id;
+        cards.forEach((_, id) => paintCard(id));
+        showSaga(sg);
+      } },
+        h('div', { class: 'saga-poster' }, posterImg({ poster: null, title: sg.label }, 'w185')),
+        h('b', {}, sg.label),
+        h('div', { class: 'saga-meta' }, h('span', { class: 'saga-count' }, '—'), h('div', { class: 'progress' }, h('i', {}))));
+      cards.set(sg.id, card);
+      return card;
+    }));
+    fill(listHead, shelf, h('div', { class: 'saga-head' }));
+    listHead._paintAll = () => cards.forEach((_, id) => paintCard(id));
+    cards.forEach((_, id) => paintCard(id));
+    loader = { done: true, next: async () => {} };
+
+    const load = id => (sagaCache.has(id) ? Promise.resolve(sagaCache.get(id))
+      : tmdb.collection(id).then(c => { sagaCache.set(id, c); return c; }));
+    // Covers and progress for the whole group, three at a time.
+    const queue = group.sagas.map(x => x.id).filter(id => !sagaCache.has(id));
+    const worker = async () => { while (queue.length && my === gen) { const id = queue.shift(); try { await load(id); } catch { /* card keeps its placeholder */ } if (my === gen) paintCard(id); } };
+    worker(); worker(); worker();
+
+    async function showSaga(sg) {
+      const head = listHead.querySelector('.saga-head');
+      fill(grid);
+      fill(head);
+      fill(status, loading('Localizando saga'));
+      try {
+        const c = await load(sg.id);
+        if (my !== gen || state.saga !== sg.id) return;
+        fill(status);
+        paintCard(sg.id);
+        if (!c.parts.length) { fill(status, emptyState('Saga sin estrenos', 'Ninguna película de esta saga se ha estrenado todavía.')); return; }
+        const all = h('button', { class: 'btn solid', type: 'button' });
+        const paintAll = () => {
+          const missing = c.parts.filter(p => !isSeen(p)).length;
+          fill(all, icon('hexcheck'), missing ? `Marcar la saga entera (${missing})` : 'Saga completa');
+          all.disabled = !missing;
+        };
+        all.addEventListener('click', () => {
+          for (const p of c.parts) if (!isSeen(p)) { const r = ctx.toggleSeen(p); if (r.changed) state.session++; }
+          grid.querySelectorAll('.card').forEach(card => setCardWatched(card, true));
+          paintAll(); paintCounter(); paintCard(sg.id);
+          ctx.toast(`${sg.label}: saga registrada.`);
+        });
+        paintAll();
+        fill(head, h('div', { class: 'section-head' },
+          h('div', { style: { display: 'grid', gap: '4px' } }, h('h2', { class: 'h2' }, sg.label),
+            h('span', { class: 'mono faint' }, `${c.parts.length} ${c.parts.length === 1 ? 'PELÍCULA' : 'PELÍCULAS'}${c.upcoming ? ` · ${c.upcoming} EN CAMINO` : ''}`)),
+          all));
+        listHead._paintAll = () => { paintAll(); cards.forEach((_, id) => paintCard(id)); };
+        addCards(c.parts);
+      } catch (e) {
+        if (my === gen && state.saga === sg.id) fill(status, emptyState('No se ha podido cargar', errorText(e)));
+      }
     }
+    showSaga(group.sagas.find(x => x.id === state.saga));
   }
 
   async function refreshList() {
     gen++;
-    grid.replaceChildren(); listHead.replaceChildren(); status.replaceChildren();
+    fill(grid); fill(listHead); fill(status);
+    listHead._paintAll = null;
     loader = null;
     const t = state.type;
     const q = state.query.trim();
-    if (q) return start(paged(p => tmdb.search(q, p), { search: true }));
+    if (q) {
+      // People who match (directors, actors) appear first: one tap opens their filmography.
+      const my = gen;
+      return start(paged(p => tmdb.search(q, p).then(r => {
+        if (p === 1 && my === gen && r.people.length) {
+          fill(listHead, h('div', { class: 'chips person-chips', role: 'group', 'aria-label': 'Personas' }, r.people.slice(0, 6).map(person =>
+            h('button', { class: 'chip person-chip', type: 'button', onClick: () => ctx.openPerson(person) },
+              h('span', { class: 'pc-photo' }, personImg(person, 'w45')), person.name))));
+        }
+        return r;
+      }), { search: true }));
+    }
     paintControls();
     switch (state.source) {
       case 'top': return start(paged(p => tmdb.discover(t, { sort: 'vote_count.desc' }, p)));
@@ -233,23 +286,15 @@ export function render(root, ctx) {
         const my = gen;
         try {
           if (!providerCache[t]) providerCache[t] = (await tmdb.providers(t)).slice(0, 10);
-        } catch (e) { status.replaceChildren(emptyState('No se ha podido cargar', errorText(e))); return; }
+        } catch (e) { fill(status, emptyState('No se ha podido cargar', errorText(e))); return; }
         if (my !== gen) return;
         setOptions(providerCache[t].map(p => ({ id: p.id, label: p.name })), refreshList);
         return start(paged(p => tmdb.discover(t, { provider: state.option, sort: 'vote_count.desc' }, p)));
       }
       case 'saga': return sagaView();
       case 'studio': {
-        setOptions(STUDIOS.map(s => ({ id: s, label: s.replace(' Ltd.', '') })), refreshList);
-        const my = gen;
-        status.replaceChildren(loading());
-        try {
-          const co = await tmdb.companyByName(String(state.option));
-          if (my !== gen) return;
-          if (!co) { status.replaceChildren(emptyState('Estudio no encontrado', '')); return; }
-          return start(paged(p => tmdb.discover('movie', { company: co.id, sort: 'vote_count.desc' }, p)));
-        } catch (e) { if (my === gen) status.replaceChildren(emptyState('No se ha podido cargar', errorText(e))); }
-        return;
+        setOptions(STUDIOS, refreshList);
+        return start(paged(p => tmdb.discover('movie', { company: state.option, sort: 'vote_count.desc' }, p)));
       }
     }
   }
