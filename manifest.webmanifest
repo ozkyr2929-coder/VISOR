@@ -1,0 +1,24 @@
+{
+  "name": "VISOR · Registro de cine y series",
+  "short_name": "VISOR",
+  "description": "Tu registro personal de cine y series.",
+  "lang": "es-ES",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./#inicio",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#02060c",
+  "theme_color": "#02060c",
+  "categories": ["entertainment", "lifestyle"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Ponerse al día", "url": "./#catalogo" },
+    { "name": "Archivo", "url": "./#archivo" }
+  ]
+}
